@@ -12,7 +12,7 @@ __all__ = [
 
 class City(BaseModel):
     """
-    One autocomplete result from the Geocoding API.
+    One autocomplete result from the Geocoding API.cle
     """
 
     name: str = Field(..., description="City name, e.g. 'Moscow'")

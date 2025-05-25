@@ -26,8 +26,6 @@ async def search_city(q: str) -> List[City]:
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             resp = e.response
-            # If the body is JSON, hide it and report only the status code;
-            # if it's plain text, propagate that.
             try:
                 resp.json()
                 err_msg = f"Geocoding API returned HTTP {resp.status_code}"
@@ -38,8 +36,13 @@ async def search_city(q: str) -> List[City]:
             raise WeatherServiceError(f"Error requesting Geocoding API: {e}") from e
 
         data = response.json()
-        result = GeocodingResponse.model_validate(data)
-        return result.results
+        try:
+            parsed = GeocodingResponse.model_validate(data)
+        except ValueError as e:
+            raise WeatherServiceError(
+                f"Invalid response from Geocoding API: {e}"
+            ) from e
+        return parsed.results
 
 
 async def get_forecast(lat: float, lon: float) -> ForecastResponse:

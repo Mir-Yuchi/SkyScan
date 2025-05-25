@@ -1,9 +1,12 @@
-# app/main.py
 from fastapi import FastAPI
+from starlette.middleware import Middleware
 
+from app.middleware import AuthMiddleware
 from app.routers import api, web
 
-app = FastAPI(title="SkyScan")
+middleware = [Middleware(AuthMiddleware)]
+
+app = FastAPI(title="SkyScan", middleware=middleware)
 
 app.include_router(web.router)
 

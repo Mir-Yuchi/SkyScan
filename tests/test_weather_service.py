@@ -8,6 +8,7 @@ from app.services.weather import (
     FORECAST_API_URL,
     GEOCODING_API_URL,
     WeatherServiceError,
+    fetch_weather_by_city,
     get_forecast,
     search_city,
 )
@@ -73,6 +74,7 @@ async def test_get_forecast_success():
         "utc_offset_seconds": 3600,
         "timezone": "Europe/Moscow",
         "timezone_abbreviation": "MSK",
+        "elevation": 100.0,
         "hourly": {
             "time": ["2023-10-01T00:00:00Z", "2023-10-01T01:00:00Z"],
             "temperature_2m": [15.0, 14.5],
@@ -112,3 +114,63 @@ async def test_get_forecast_request_error(monkeypatch):
     with pytest.raises(WeatherServiceError) as excinfo:
         await get_forecast(0.0, 0.0)
     assert "Error requesting Forecast API" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_weather_by_city_happy_path():
+    geo_payload = {
+        "results": [
+            {
+                "name": "Testville",
+                "country": "Testland",
+                "country_code": "TL",
+                "latitude": 12.34,
+                "longitude": 56.78,
+                "admin1": "Region",
+                "timezone": "UTC",
+            }
+        ]
+    }
+    respx.get(GEOCODING_API_URL).mock(return_value=Response(200, json=geo_payload))
+
+    forecast_payload = {
+        "latitude": 12.34,
+        "longitude": 56.78,
+        "generationtime_ms": 0.99,
+        "utc_offset_seconds": 0,
+        "timezone": "UTC",
+        "timezone_abbreviation": "UTC",
+        "elevation": 50.0,
+        "hourly": {
+            "time": ["2025-05-26T00:00:00Z"],
+            "temperature_2m": [20.0],
+            "weathercode": [0],
+        },
+    }
+    respx.get(FORECAST_API_URL).mock(return_value=Response(200, json=forecast_payload))
+
+    city, forecast = await fetch_weather_by_city("Testville")
+    assert isinstance(city, City)
+    assert city.name == "Testville"
+    assert isinstance(forecast, ForecastResponse)
+    assert forecast.hourly.temperature_2m == [20.0]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_weather_by_city_no_match():
+    respx.get(GEOCODING_API_URL).mock(return_value=Response(200, json={"results": []}))
+
+    with pytest.raises(WeatherServiceError) as excinfo:
+        await fetch_weather_by_city("UnknownCity")
+    assert "No matching city for 'UnknownCity'" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_weather_by_city_geocoding_error():
+    respx.get(GEOCODING_API_URL).mock(return_value=Response(500, text="Error"))
+
+    with pytest.raises(WeatherServiceError):
+        await fetch_weather_by_city("ErrorTown")

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>SkyScan</title>
+  </head>
+  <body>
+    <h1>SkyScan Weather</h1>
+    <form action="/weather" method="post" autocomplete="off">
+      <input
+        type="text"
+        id="city-input"
+        name="city"
+        placeholder="Enter city"
+        required
+        value="{{ city.name if city else '' }}"
+      />
+      <ul id="suggestions" style="list-style:none; padding:0; margin:0;"></ul>
+      <button type="submit">Get Weather</button>
+    </form>
+
+    {% if forecast %}
+      <h2>Forecast for {{ city.name }} ({{ city.country }})</h2>
+      <ul>
+        {% for i in range(forecast.hourly.time|length) %}
+          <li>
+            {{ forecast.hourly.time[i] }}:
+            {{ forecast.hourly.temperature_2m[i] }}°C,
+            code {{ forecast.hourly.weathercode[i] }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </body>
+
+  <script>
+    const input = document.getElementById('city-input');
+    const sugg = document.getElementById('suggestions');
+    let timer;
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (!q) {
+        sugg.innerHTML = '';
+        return;
+      }
+      timer = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/suggest?query=${encodeURIComponent(q)}`);
+          if (!res.ok) throw new Error();
+          const cities = await res.json();
+          sugg.innerHTML = cities
+            .map((c, idx) => `<li data-idx="${idx}" style="cursor:pointer; padding:4px;">
+                                ${c.name}, ${c.country_code}
+                              </li>`)
+            .join('');
+          Array.from(sugg.children).forEach(li => {
+            li.addEventListener('click', () => {
+              const idx = li.getAttribute('data-idx');
+              input.value = cities[idx].name;
+              sugg.innerHTML = '';
+            });
+          });
+        } catch {
+          sugg.innerHTML = '';
+        }
+      }, 300);
+    });
+
+    document.addEventListener('click', e => {
+      if (e.target !== input) sugg.innerHTML = '';
+    });
+  </script>
+</html>

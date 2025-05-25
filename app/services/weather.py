@@ -65,14 +65,14 @@ async def get_forecast(lat: float, lon: float) -> ForecastResponse:
         return ForecastResponse.model_validate(data)
 
 
-async def fetch_weather_by_city(q: str) -> Tuple[City, ForecastResponse]:
+async def fetch_weather_by_city(q: str) -> tuple[City, ForecastResponse]:
     """
     Autocomplete a city name, pick the first mathc,
     fetch its forecast and return both.
     """
     cities = await search_city(q)
     if not cities:
-        raise WeatherServiceError(f"No cities found for query: {q}")
+        raise WeatherServiceError(f"No matching city for '{q}'")
 
     city = cities[0]
     forecast = await get_forecast(city.latitude, city.longitude)

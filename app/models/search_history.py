@@ -31,6 +31,7 @@ class SearchHistory(Base):
     )
 
     search_at = Column(
+        "searched_at",
         DATETIME(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,

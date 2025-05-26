@@ -1,194 +1,174 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
+<head>
+    <meta charset="utf-8"/>
     <title>SkyScan Weather</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      /* Autocomplete dropdown */
-      #suggestions {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        border: 1px solid #ccc;
-        max-width: 300px;
-        position: absolute;
-        background: #fff;
-      }
-      #suggestions li { padding: 4px 8px; cursor: pointer; }
-      #suggestions li.active { background: #eef; }
-      #suggestions li.loading,
-      #suggestions li.none,
-      #suggestions li.error { font-style: italic; }
-
-      .matched { font-weight: bold; }
-      .recent-list { list-style: none; padding: 0; }
-      .recent-list li { display: inline-block; margin-right: 8px; }
-
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        max-width: 500px;
-        margin-bottom: 1em;
-      }
-      th, td {
-        border: 1px solid #ccc;
-        padding: 4px 8px;
-        text-align: left;
-      }
-      th { background: #f0f0f0; }
+        /* Custom animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideDown {
+            from { opacity: 0; max-height: 0; }
+            to { opacity: 1; max-height: 200px; }
+        }
+        .animate-fadeIn {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        .animate-slideDown {
+            animation: slideDown 0.4s ease-out forwards;
+        }
+        /* Hide suggestions by default */
+        #suggestions { display: none; }
+        #suggestions.show { display: block; }
+        /* Gradient background */
+        body {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #93c5fd 100%);
+        }
     </style>
-  </head>
-  <body>
-    <h1>SkyScan Weather</h1>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start p-4 sm:p-8">
+    <div class="w-full max-w-3xl bg-white/90 backdrop-blur-md rounded-xl shadow-2xl p-6 sm:p-8">
+        <h1 class="text-4xl font-extrabold text-center text-blue-900 mb-6 animate-fadeIn">SkyScan Weather</h1>
 
-    {% if recent_cities %}
-      {% set last_city = recent_cities[0] %}
-      <p>
-        Welcome back!
-        <form action="/weather" method="post" style="display:inline;">
-          <input type="hidden" name="city" value="{{ last_city }}" />
-          <button type="submit">See weather for {{ last_city }}</button>
+        {% if recent_cities %}
+            {% set last_city = recent_cities[0] %}
+            <div class="mb-6 animate-fadeIn">
+                <p class="text-blue-800 text-lg font-medium mb-3">Welcome back!</p>
+                <form action="/weather" method="post" class="inline-block">
+                    <input type="hidden" name="city" value="{{ last_city }}"/>
+                    <button type="submit" class="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
+                        See weather for {{ last_city }}
+                    </button>
+                </form>
+            </div>
+
+            <p class="text-blue-800 text-lg font-medium mb-3">Your recent cities:</p>
+            <ul class="recent-list flex flex-wrap gap-3 mb-8">
+                {% for name in recent_cities %}
+                    <li class="animate-fadeIn" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
+                        <form action="/weather" method="post" class="inline-block">
+                            <input type="hidden" name="city" value="{{ name }}"/>
+                            <button type="submit" class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg hover:bg-blue-200 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-md">
+                                {{ name }}
+                            </button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        <form action="/weather" method="post" autocomplete="off" class="relative mb-8">
+            <input
+                type="text"
+                id="city-input"
+                name="city"
+                placeholder="Enter city"
+                required
+                value="{{ city.name if city else '' }}"
+                class="w-full p-4 rounded-lg border border-blue-200 bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-300 text-blue-900 placeholder-blue-400"
+            />
+            <ul id="suggestions" class="absolute w-full bg-white/95 border border-blue-200 rounded-lg shadow-xl mt-2 max-h-48 overflow-y-auto z-20 animate-slideDown">
+            </ul>
+            <button type="submit" class="mt-3 w-full bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
+                Get Weather
+            </button>
         </form>
-      </p>
 
-      <p>Your recent cities:</p>
-      <ul class="recent-list">
-        {% for name in recent_cities %}
-          <li>
-            <form action="/weather" method="post" style="display:inline;">
-              <input type="hidden" name="city" value="{{ name }}" />
-              <button type="submit">{{ name }}</button>
-            </form>
-          </li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-
-    <form action="/weather" method="post" autocomplete="off" style="position: relative;">
-      <input
-        type="text"
-        id="city-input"
-        name="city"
-        placeholder="Enter city"
-        required
-        value="{{ city.name if city else '' }}"
-      />
-      <ul id="suggestions"></ul>
-      <button type="submit">Get Weather</button>
-    </form>
-
-    {% if preview %}
-      <h2>Forecast for {{ city.name }}</h2>
-
-      <!-- Next 6-hour preview -->
-      <table>
-        <thead>
-          <tr><th>Time</th><th>Temp (°C)</th></tr>
-        </thead>
-        <tbody>
-          {% for t, temp in preview %}
-            <tr>
-              <td>{{ t }}</td>
-              <td>{{ temp }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-
-      <!-- Show full hourly toggle -->
-      <button id="show-more">Show full hourly forecast</button>
-      <div id="full-forecast" style="display:none; margin-top:1em;">
-        <table>
-          <thead>
-            <tr><th>Time</th><th>Temp (°C)</th></tr>
-          </thead>
-          <tbody>
-            {% for t, temp in full %}
-              <tr>
-                <td>{{ t }}</td>
-                <td>{{ temp }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <script>
-        document.getElementById('show-more').addEventListener('click', () => {
-          document.getElementById('full-forecast').style.display = 'block';
-          document.getElementById('show-more').style.display    = 'none';
-        });
-      </script>
-    {% endif %}
+        {% if preview %}
+            <h2 class="text-2xl font-semibold text-blue-900 mb-4 animate-fadeIn">Forecast for {{ city.name }}</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse bg-white/95 rounded-lg shadow-xl">
+                    <thead>
+                        <tr class="bg-blue-200">
+                            <th class="p-4 text-left text-blue-800 font-semibold rounded-tl-lg">Time</th>
+                            <th class="p-4 text-left text-blue-800 font-semibold rounded-tr-lg">Temp (°C)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t, temp in preview %}
+                            <tr class="border-b border-blue-100 animate-fadeIn" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
+                                <td class="p-4 text-blue-700">{{ t.strftime("%H:%M") }}</td>
+                                <td class="p-4 text-blue-700">{{ temp }}°C</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
 
     <script>
-      const input = document.getElementById('city-input');
-      const sugg  = document.getElementById('suggestions');
-      let timer = null, selected = -1, lastList = [];
+        const input = document.getElementById('city-input');
+        const sugg = document.getElementById('suggestions');
+        let timer = null, selected = -1, lastList = [];
 
-      input.addEventListener('input', () => {
-        clearTimeout(timer);
-        const q = input.value.trim();
-        if (!q) return (sugg.innerHTML = '');
-        timer = setTimeout(fetchSuggestions, 200);
-      });
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (!q) return (sugg.innerHTML = '', sugg.classList.remove('show'));
+            timer = setTimeout(fetchSuggestions, 200);
+        });
 
-      async function fetchSuggestions() {
-        sugg.innerHTML = '<li class="loading">Loading…</li>';
-        try {
-          const res = await fetch(
-            `/api/suggest?query=${encodeURIComponent(input.value.trim())}`
-          );
-          const list = res.ok ? await res.json() : [];
-          lastList = list;
-          if (!list.length) {
-            sugg.innerHTML = '<li class="none">No matches</li>';
-          } else {
-            sugg.innerHTML = list
-              .map((c,i) => `<li data-idx="${i}">${highlight(c.name)}</li>`)
-              .join('');
-          }
-          selected = -1;
-        } catch {
-          sugg.innerHTML = '<li class="error">Error</li>';
+        async function fetchSuggestions() {
+            sugg.innerHTML = '<li class="loading p-3 text-blue-500 italic">Loading…</li>';
+            sugg.classList.add('show');
+            try {
+                const res = await fetch(`/api/suggest?query=${encodeURIComponent(input.value.trim())}`);
+                const list = res.ok ? await res.json() : [];
+                lastList = list;
+                if (!list.length) {
+                    sugg.innerHTML = '<li class="none p-3 text-blue-500 italic">No matches</li>';
+                } else {
+                    sugg.innerHTML = list
+                        .map((c, i) => `<li data-idx="${i}" class="p-3 hover:bg-blue-100 cursor-pointer transition duration-200 text-blue-700">${highlight(c.name)}</li>`)
+                        .join('');
+                }
+                selected = -1;
+            } catch {
+                sugg.innerHTML = '<li class="error p-3 text-red-500 italic">Error</li>';
+            }
         }
-      }
 
-      function highlight(name) {
-        const q = input.value.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        return name.replace(
-          new RegExp(`^(${q})`, 'i'),
-          '<span class="matched">$1</span>'
-        );
-      }
-
-      sugg.addEventListener('click', (e) => {
-        const li = e.target.closest('li[data-idx]');
-        if (!li) return;
-        input.value = lastList[+li.dataset.idx].name;
-        sugg.innerHTML = '';
-      });
-
-      input.addEventListener('keydown', (e) => {
-        const items = sugg.querySelectorAll('li[data-idx]');
-        if (!items.length) return;
-        if (e.key === 'ArrowDown') {
-          selected = Math.min(selected + 1, items.length - 1);
-        } else if (e.key === 'ArrowUp') {
-          selected = Math.max(selected - 1, 0);
-        } else if (e.key === 'Enter' && selected >= 0) {
-          input.value = lastList[selected].name;
-          sugg.innerHTML = '';
-        } else {
-          return;
+        function highlight(name) {
+            const q = input.value.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            return name.replace(
+                new RegExp(`^(${q})`, 'i'),
+                '<span class="font-bold text-blue-900">$1</span>'
+            );
         }
-        items.forEach(li => li.classList.remove('active'));
-        items[selected].classList.add('active');
-        e.preventDefault();
-      });
 
-      document.addEventListener('click', (e) => {
-        if (e.target !== input) sugg.innerHTML = '';
-      });
+        sugg.addEventListener('click', (e) => {
+            const li = e.target.closest('li[data-idx]');
+            if (!li) return;
+            input.value = lastList[+li.dataset.idx].name;
+            sugg.classList.remove('show');
+        });
+
+        input.addEventListener('keydown', (e) => {
+            const items = sugg.querySelectorAll('li[data-idx]');
+            if (!items.length) return;
+            if (e.key === 'ArrowDown') {
+                selected = Math.min(selected + 1, items.length - 1);
+            } else if (e.key === 'ArrowUp') {
+                selected = Math.max(selected - 1, -1);
+            } else if (e.key === 'Enter' && selected >= 0) {
+                input.value = lastList[selected].name;
+                sugg.classList.remove('show');
+            } else {
+                return;
+            }
+            items.forEach(li => li.classList.remove('bg-blue-200'));
+            if (selected >= 0) items[selected].classList.add('bg-blue-200');
+            e.preventDefault();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (e.target !== input) sugg.classList.remove('show');
+        });
     </script>
-  </body>
+</body>
 </html>

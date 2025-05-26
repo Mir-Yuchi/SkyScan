@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import httpx
+from httpx import RequestError
 
 from app.schemas.weather import City, ForecastResponse, GeocodingResponse
 
@@ -12,79 +13,86 @@ class WeatherServiceError(Exception):
     """Generic exception for weather service errors."""
 
 
-async def search_city(q: str) -> List[City]:
+async def search_city(
+    name: str, max_results: int = 15, client: httpx.AsyncClient | None = None
+) -> List[City]:
     """
     Call the Open-Meteo geocoding API to autocomplete city names.
-    :param q: partial or full city name
-    :return: A list of City objects (up to 10).
-    :raises WeatherServiceError: On HTTP errors or timeouts.
+    :raises WeatherServiceError: on HTTP errors (with generic message for JSON errors,
+      raw text for non-JSON), or on network/request errors.
     """
-    params = {"name": q, "count": 10}
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(GEOCODING_API_URL, params=params, timeout=5.0)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            resp = e.response
+    own_client = client or httpx.AsyncClient(timeout=5.0)
+    try:
+        resp = await own_client.get(
+            GEOCODING_API_URL, params={"name": name, "count": max_results}
+        )
+        if resp.status_code >= 400:
             try:
                 resp.json()
-                err_msg = f"Geocoding API returned HTTP {resp.status_code}"
             except ValueError:
-                err_msg = resp.text or f"Geocoding API returned HTTP {resp.status_code}"
-            raise WeatherServiceError(err_msg) from e
-        except httpx.RequestError as e:
-            raise WeatherServiceError(f"Error requesting Geocoding API: {e}") from e
+                raise WeatherServiceError(resp.text)
+            else:
+                raise WeatherServiceError(
+                    f"Geocoding API returned HTTP {resp.status_code}"
+                )
 
-        data = response.json()
-        try:
-            parsed = GeocodingResponse.model_validate(data)
-        except ValueError as e:
-            raise WeatherServiceError(
-                f"Invalid response from Geocoding API: {e}"
-            ) from e
-        return parsed.results
+        data = GeocodingResponse.model_validate(resp.json())
+        return data.results
+
+    except WeatherServiceError:
+        raise
+    except RequestError as e:
+        raise WeatherServiceError(f"Error requesting Geocoding API: {e}") from e
+    except Exception as e:
+        raise WeatherServiceError(f"Geocoding failed: {e}") from e
+    finally:
+        if client is None:
+            await own_client.aclose()
 
 
 async def get_forecast(lat: float, lon: float) -> ForecastResponse:
     """
     Call the Open-Meteo Forecast API for hourly temperature and weather code.
-    :param lat: Latitude of the location
-    :param lon: Longitude of the location
-    :return: A ForecastResponse object containing metadata and hourly forecast data.
-    :raises WeatherServiceError: On HTTP errors or timeouts.
+    :raises WeatherServiceError: on HTTP errors (generic for JSON, raw text otherwise),
+      or on network/request errors.
     """
     params = {
         "latitude": lat,
         "longitude": lon,
         "hourly": "temperature_2m,weathercode",
+        "current_weather": True,
         "timezone": "auto",
     }
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            response = await client.get(FORECAST_API_URL, params=params, timeout=5.0)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            raise WeatherServiceError(
-                f"Forecast API returned HTTP {e.response.status_code}"
-            ) from e
-        except httpx.RequestError as e:
+            resp = await client.get(FORECAST_API_URL, params=params)
+        except RequestError as e:
             raise WeatherServiceError(f"Error requesting Forecast API: {e}") from e
 
-        data = response.json()
-        return ForecastResponse.model_validate(data)
+        if resp.status_code >= 400:
+            try:
+                resp.json()
+            except ValueError:
+                raise WeatherServiceError(resp.text)
+            else:
+                raise WeatherServiceError(
+                    f"Forecast API returned HTTP {resp.status_code}"
+                )
+
+        return ForecastResponse.model_validate(resp.json())
 
 
-async def fetch_weather_by_city(q: str) -> Tuple[City, ForecastResponse]:
+async def fetch_weather_by_city(
+    city_name: str, client: httpx.AsyncClient | None = None
+) -> Tuple[City, ForecastResponse]:
     """
     Autocomplete a city name, pick the first match,
     fetch its forecast and return both.
-    :param q: City name to look up
-    :return: Tuple of (City, ForecastResponse)
-    :raises WeatherServiceError: if no city matches or underlying API errors
+    :raises WeatherServiceError: if no match or underlying API errors.
     """
-    cities = await search_city(q)
+    cities = await search_city(city_name, max_results=1, client=client)
     if not cities:
-        raise WeatherServiceError(f"No matching city for '{q}'")
+        raise WeatherServiceError(f"No matching city for '{city_name}'")
 
     city = cities[0]
     forecast = await get_forecast(city.latitude, city.longitude)

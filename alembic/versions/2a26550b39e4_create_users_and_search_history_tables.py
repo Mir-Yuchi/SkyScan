@@ -1,9 +1,7 @@
-"""create users and search_history tables
-
+"""
 Revision ID: 2a26550b39e4
 Revises:
 Create Date: 2025-05-25 19:44:42.095177
-
 """
 
 from typing import Sequence, Union
@@ -40,7 +38,7 @@ def upgrade() -> None:
         unique=True,
     )
 
-    # 2) Create a 'search_history' table
+    # 2) Create 'search_history' table with search_at column
     op.create_table(
         "search_history",
         sa.Column("id", sa.Integer(), primary_key=True, nullable=False),
@@ -52,11 +50,20 @@ def upgrade() -> None:
         ),
         sa.Column("city_name", sa.String(), nullable=False),
         sa.Column(
-            "searched_at",
+            "search_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
             nullable=False,
         ),
+    )
+    # Rename search_at to searched_at
+    op.alter_column(
+        "search_history",
+        "search_at",
+        new_column_name="searched_at",
+        existing_type=sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
     )
     # Indexes for fast queries by user and by city
     op.create_index(
@@ -75,6 +82,15 @@ def downgrade() -> None:
     # Drop indexes and tables in reverse order
     op.drop_index("ix_search_history_city_name", table_name="search_history")
     op.drop_index("ix_search_history_user_id", table_name="search_history")
+    # Rename searched_at back to search_at before dropping
+    op.alter_column(
+        "search_history",
+        "searched_at",
+        new_column_name="search_at",
+        existing_type=sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
     op.drop_table("search_history")
 
     op.drop_index("ix_users_cookie_id", table_name="users")

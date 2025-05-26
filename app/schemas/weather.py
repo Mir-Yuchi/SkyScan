@@ -12,20 +12,25 @@ __all__ = [
 
 class City(BaseModel):
     """
-    One autocomplete result from the Geocoding API.cle
+    One autocomplete result from the Geocoding API.
     """
 
     name: str = Field(..., description="City name, e.g. 'Moscow'")
-    country: str = Field(..., description="Country name, e.g. 'Russia'")
-    country_code: str = Field(
-        ..., min_length=2, max_length=2, description="ISO 3166-1 alpha-2 code"
+    country: str | None = Field(None, description="Country name, e.g. 'Russia'")
+    country_code: str | None = Field(
+        None, min_length=2, max_length=2, description="ISO 3166-1 alpha-2 code"
     )
-    latitude: float = Field(..., description="Latitude in decimal degrees")
-    longitude: float = Field(..., description="Longitude in decimal degrees")
+    latitude: float | None = Field(None, description="Latitude in decimal degrees")
+    longitude: float | None = Field(None, description="Longitude in decimal degrees")
     admin1: str | None = Field(
         None, description="State / region / admin1 subdivision, if available"
     )
-    timezone: str = Field(..., description="IANA timezone name, e.g. 'Europe/Moscow'")
+    timezone: str | None = Field(
+        None, description="IANA timezone name, e.g. 'Europe/Moscow'"
+    )
+    search_count: int | None = Field(
+        None, description="Number of times this city was searched (history)"
+    )
 
     model_config = {"populate_by_name": True}
 

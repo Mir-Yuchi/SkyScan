@@ -1,6 +1,7 @@
 # alembic/env.py
 
 import asyncio
+import logging
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -17,9 +18,13 @@ fileConfig(config.config_file_name)
 # metadata for 'autogenerate' support (even though we're writing SQL by hand)
 target_metadata = Base.metadata
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 def run_migrations_offline() -> None:
     url = str(settings.database_url)
+    logger.info(f"Running offline migrations with URL: {url}")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -36,6 +41,7 @@ def do_run_migrations(sync_connection) -> None:
     This function is executed in a synchronous context,
     taking the raw DBAPI connection.
     """
+    logger.info("Running online migrations")
     context.configure(
         connection=sync_connection,
         target_metadata=target_metadata,
@@ -51,6 +57,7 @@ async def run_migrations_online() -> None:
         poolclass=pool.NullPool,
         future=True,
     )
+    logger.info(f"Connecting to database with URL: {str(settings.database_url)}")
     async with connectable.connect() as connection:
         # Pass the sync connection to our runner
         await connection.run_sync(do_run_migrations)

@@ -1,23 +1,23 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       build-essential \
-       libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir poetry
 
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock /app/
+COPY pyproject.toml poetry.lock ./
 
-RUN pip install "poetry>=1.8.0" \
-    && poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --only main --no-root
+RUN poetry config virtualenvs.create false \
+ && poetry install --no-interaction --no-ansi --only main --no-root
 
-COPY . /app
+COPY . .
 
-ENV PORT=8000
 EXPOSE 8000
 
-CMD alembic upgrade head && \
-    exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
+CMD ["sh", "-c", "poetry run alembic upgrade head && poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000"]

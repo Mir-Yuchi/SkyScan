@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <title>SkyScan Weather</title>
     <style>
-      /* Basic dropdown & highlighting */
+      /* Autocomplete dropdown */
       #suggestions {
         list-style: none;
         margin: 0;
@@ -23,13 +23,25 @@
       .matched { font-weight: bold; }
       .recent-list { list-style: none; padding: 0; }
       .recent-list li { display: inline-block; margin-right: 8px; }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        max-width: 500px;
+        margin-bottom: 1em;
+      }
+      th, td {
+        border: 1px solid #ccc;
+        padding: 4px 8px;
+        text-align: left;
+      }
+      th { background: #f0f0f0; }
     </style>
   </head>
   <body>
     <h1>SkyScan Weather</h1>
 
     {% if recent_cities %}
-      {# “Classic” single-link for the very last city (keeps tests happy) #}
       {% set last_city = recent_cities[0] %}
       <p>
         Welcome back!
@@ -39,7 +51,6 @@
         </form>
       </p>
 
-      {# Multi-item recent-cities panel #}
       <p>Your recent cities:</p>
       <ul class="recent-list">
         {% for name in recent_cities %}
@@ -66,15 +77,47 @@
       <button type="submit">Get Weather</button>
     </form>
 
-    {% if forecast %}
+    {% if preview %}
       <h2>Forecast for {{ city.name }}</h2>
-      <ul>
-        {% for t in forecast.hourly.time %}
-          <li>
-            {{ t }}: {{ forecast.hourly.temperature_2m[loop.index0] }}°C
-          </li>
-        {% endfor %}
-      </ul>
+
+      <!-- Next 6-hour preview -->
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Temp (°C)</th></tr>
+        </thead>
+        <tbody>
+          {% for t, temp in preview %}
+            <tr>
+              <td>{{ t }}</td>
+              <td>{{ temp }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <!-- Show full hourly toggle -->
+      <button id="show-more">Show full hourly forecast</button>
+      <div id="full-forecast" style="display:none; margin-top:1em;">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Temp (°C)</th></tr>
+          </thead>
+          <tbody>
+            {% for t, temp in full %}
+              <tr>
+                <td>{{ t }}</td>
+                <td>{{ temp }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <script>
+        document.getElementById('show-more').addEventListener('click', () => {
+          document.getElementById('full-forecast').style.display = 'block';
+          document.getElementById('show-more').style.display    = 'none';
+        });
+      </script>
     {% endif %}
 
     <script>
@@ -118,16 +161,13 @@
         );
       }
 
-      // Click selection
       sugg.addEventListener('click', (e) => {
         const li = e.target.closest('li[data-idx]');
         if (!li) return;
-        const idx = +li.dataset.idx;
-        input.value = lastList[idx].name;
+        input.value = lastList[+li.dataset.idx].name;
         sugg.innerHTML = '';
       });
 
-      // Keyboard nav
       input.addEventListener('keydown', (e) => {
         const items = sugg.querySelectorAll('li[data-idx]');
         if (!items.length) return;
@@ -141,12 +181,11 @@
         } else {
           return;
         }
-        items.forEach((li) => li.classList.remove('active'));
+        items.forEach(li => li.classList.remove('active'));
         items[selected].classList.add('active');
         e.preventDefault();
       });
 
-      // Close on outside click
       document.addEventListener('click', (e) => {
         if (e.target !== input) sugg.innerHTML = '';
       });

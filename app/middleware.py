@@ -20,7 +20,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if cookie:
                 result = await session.execute(select(User).filter_by(cookie_id=cookie))
                 user = result.scalar_one_or_none()
-                if not User:
+                if not user:
                     user = User(cookie_id=cookie)
                     session.add(user)
                     await session.commit()

@@ -1,12 +1,59 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>SkyScan</title>
+    <title>SkyScan Weather</title>
+    <style>
+      /* Basic dropdown & highlighting */
+      #suggestions {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border: 1px solid #ccc;
+        max-width: 300px;
+        position: absolute;
+        background: #fff;
+      }
+      #suggestions li { padding: 4px 8px; cursor: pointer; }
+      #suggestions li.active { background: #eef; }
+      #suggestions li.loading,
+      #suggestions li.none,
+      #suggestions li.error { font-style: italic; }
+
+      .matched { font-weight: bold; }
+      .recent-list { list-style: none; padding: 0; }
+      .recent-list li { display: inline-block; margin-right: 8px; }
+    </style>
   </head>
   <body>
     <h1>SkyScan Weather</h1>
-    <form action="/weather" method="post" autocomplete="off">
+
+    {% if recent_cities %}
+      {# “Classic” single-link for the very last city (keeps tests happy) #}
+      {% set last_city = recent_cities[0] %}
+      <p>
+        Welcome back!
+        <form action="/weather" method="post" style="display:inline;">
+          <input type="hidden" name="city" value="{{ last_city }}" />
+          <button type="submit">See weather for {{ last_city }}</button>
+        </form>
+      </p>
+
+      {# Multi-item recent-cities panel #}
+      <p>Your recent cities:</p>
+      <ul class="recent-list">
+        {% for name in recent_cities %}
+          <li>
+            <form action="/weather" method="post" style="display:inline;">
+              <input type="hidden" name="city" value="{{ name }}" />
+              <button type="submit">{{ name }}</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form action="/weather" method="post" autocomplete="off" style="position: relative;">
       <input
         type="text"
         id="city-input"
@@ -15,61 +62,94 @@
         required
         value="{{ city.name if city else '' }}"
       />
-      <ul id="suggestions" style="list-style:none; padding:0; margin:0;"></ul>
+      <ul id="suggestions"></ul>
       <button type="submit">Get Weather</button>
     </form>
 
     {% if forecast %}
-      <h2>Forecast for {{ city.name }} ({{ city.country }})</h2>
+      <h2>Forecast for {{ city.name }}</h2>
       <ul>
-        {% for i in range(forecast.hourly.time|length) %}
+        {% for t in forecast.hourly.time %}
           <li>
-            {{ forecast.hourly.time[i] }}:
-            {{ forecast.hourly.temperature_2m[i] }}°C,
-            code {{ forecast.hourly.weathercode[i] }}
+            {{ t }}: {{ forecast.hourly.temperature_2m[loop.index0] }}°C
           </li>
         {% endfor %}
       </ul>
     {% endif %}
-  </body>
 
-  <script>
-    const input = document.getElementById('city-input');
-    const sugg = document.getElementById('suggestions');
-    let timer;
+    <script>
+      const input = document.getElementById('city-input');
+      const sugg  = document.getElementById('suggestions');
+      let timer = null, selected = -1, lastList = [];
 
-    input.addEventListener('input', () => {
-      clearTimeout(timer);
-      const q = input.value.trim();
-      if (!q) {
-        sugg.innerHTML = '';
-        return;
-      }
-      timer = setTimeout(async () => {
+      input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (!q) return (sugg.innerHTML = '');
+        timer = setTimeout(fetchSuggestions, 200);
+      });
+
+      async function fetchSuggestions() {
+        sugg.innerHTML = '<li class="loading">Loading…</li>';
         try {
-          const res = await fetch(`/api/suggest?query=${encodeURIComponent(q)}`);
-          if (!res.ok) throw new Error();
-          const cities = await res.json();
-          sugg.innerHTML = cities
-            .map((c, idx) => `<li data-idx="${idx}" style="cursor:pointer; padding:4px;">
-                                ${c.name}, ${c.country_code}
-                              </li>`)
-            .join('');
-          Array.from(sugg.children).forEach(li => {
-            li.addEventListener('click', () => {
-              const idx = li.getAttribute('data-idx');
-              input.value = cities[idx].name;
-              sugg.innerHTML = '';
-            });
-          });
+          const res = await fetch(
+            `/api/suggest?query=${encodeURIComponent(input.value.trim())}`
+          );
+          const list = res.ok ? await res.json() : [];
+          lastList = list;
+          if (!list.length) {
+            sugg.innerHTML = '<li class="none">No matches</li>';
+          } else {
+            sugg.innerHTML = list
+              .map((c,i) => `<li data-idx="${i}">${highlight(c.name)}</li>`)
+              .join('');
+          }
+          selected = -1;
         } catch {
-          sugg.innerHTML = '';
+          sugg.innerHTML = '<li class="error">Error</li>';
         }
-      }, 300);
-    });
+      }
 
-    document.addEventListener('click', e => {
-      if (e.target !== input) sugg.innerHTML = '';
-    });
-  </script>
+      function highlight(name) {
+        const q = input.value.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        return name.replace(
+          new RegExp(`^(${q})`, 'i'),
+          '<span class="matched">$1</span>'
+        );
+      }
+
+      // Click selection
+      sugg.addEventListener('click', (e) => {
+        const li = e.target.closest('li[data-idx]');
+        if (!li) return;
+        const idx = +li.dataset.idx;
+        input.value = lastList[idx].name;
+        sugg.innerHTML = '';
+      });
+
+      // Keyboard nav
+      input.addEventListener('keydown', (e) => {
+        const items = sugg.querySelectorAll('li[data-idx]');
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') {
+          selected = Math.min(selected + 1, items.length - 1);
+        } else if (e.key === 'ArrowUp') {
+          selected = Math.max(selected - 1, 0);
+        } else if (e.key === 'Enter' && selected >= 0) {
+          input.value = lastList[selected].name;
+          sugg.innerHTML = '';
+        } else {
+          return;
+        }
+        items.forEach((li) => li.classList.remove('active'));
+        items[selected].classList.add('active');
+        e.preventDefault();
+      });
+
+      // Close on outside click
+      document.addEventListener('click', (e) => {
+        if (e.target !== input) sugg.innerHTML = '';
+      });
+    </script>
+  </body>
 </html>

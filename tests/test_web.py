@@ -1,5 +1,3 @@
-# tests/test_web.py
-
 from datetime import datetime, timezone
 
 import pytest

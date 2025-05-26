@@ -1,0 +1,35 @@
+# docker-compose.yml
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: skyscan
+      POSTGRES_PASSWORD: skyscan_pass
+      POSTGRES_DB: skyscan_db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://skyscan:skyscan_pass@db:5432/skyscan_db
+      PORT: 8000
+    volumes:
+      - .:/app:cached
+    ports:
+      - "8000:8000"
+
+volumes:
+  db_data:

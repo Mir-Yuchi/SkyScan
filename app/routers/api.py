@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_async_session
@@ -20,39 +20,58 @@ async def health_check():
 @router.get("/suggest", response_model=list[CitySchema])
 async def suggest_city(
     request: Request,
-    query: str = Query(..., min_length=1),
+    query: str = Query(..., min_length=1, description="City name to autocomplete"),
+    limit: int = Query(15, ge=1, le=50, description="Max suggestions to return"),
     session: AsyncSession = Depends(get_async_session),
 ):
     """
-    • For single-letter queries: only your history, never error.
-    • For longer queries: history + external API; on API error → HTTP 502.
+    Blended autocomplete:
+      1) Top-5 history prefix matches
+      2) Top-5 history substring matches
+      3) Up to `limit` external suggestions
+      → merge, dedupe, return up to `limit`
     """
-    hist_stmt = (
+    user_id = request.state.user.id
+
+    prefix_stmt = (
         select(SearchHistory.city_name, func.count().label("freq"))
-        .filter(SearchHistory.user_id == request.state.user.id)
+        .filter(SearchHistory.user_id == user_id)
         .filter(SearchHistory.city_name.ilike(f"{query}%"))
         .group_by(SearchHistory.city_name)
         .order_by(desc("freq"))
         .limit(5)
     )
-    hist_rows = (await session.execute(hist_stmt)).all()
-    history_suggestions = [CitySchema(name=name) for name, _ in hist_rows]
+    prefix_rows = (await session.execute(prefix_stmt)).all()
+    prefix_sugs = [CitySchema(name=name) for name, freq in prefix_rows]
+    prefix_names = {name for name, _ in prefix_rows}
 
-    api_suggestions: list[CitySchema] = []
-    if len(query) >= 2:
-        try:
-            api_suggestions = await search_city(query)
-        except WeatherServiceError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+    substr_stmt = (
+        select(SearchHistory.city_name, func.count().label("freq"))
+        .filter(SearchHistory.user_id == user_id)
+        .filter(SearchHistory.city_name.ilike(f"%{query}%"))
+        .filter(not_(SearchHistory.city_name.in_(prefix_names)))
+        .group_by(SearchHistory.city_name)
+        .order_by(desc("freq"))
+        .limit(5)
+    )
+    substr_rows = (await session.execute(substr_stmt)).all()
+    substr_sugs = [CitySchema(name=name) for name, freq in substr_rows]
+
+    try:
+        api_sugs = await search_city(query, max_results=limit)
+    except WeatherServiceError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
     seen = set()
     merged: list[CitySchema] = []
-    for source in (*history_suggestions, *api_suggestions):
-        if source.name not in seen:
-            seen.add(source.name)
-            merged.append(source)
+    for src in (*prefix_sugs, *substr_sugs, *api_sugs):
+        if src.name not in seen:
+            seen.add(src.name)
+            merged.append(src)
+        if len(merged) >= limit:
+            break
 
-    return merged[:10]
+    return merged
 
 
 @router.get("/weather", response_model=ForecastResponse, tags=["weather"])
